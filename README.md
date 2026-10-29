@@ -9,7 +9,7 @@
 ![Node](https://img.shields.io/badge/node-22-339933?logo=node.js&logoColor=white)
 ![Tests](https://img.shields.io/badge/hidden%20tests-38-blue)
 ![Models](https://img.shields.io/badge/models-Haiku%205.5%20·%20Sonnet%205.5-8A2BE2)
-![Status](https://img.shields.io/badge/status-실행%20전-orange)
+![Status](https://img.shields.io/badge/status-1차%20실행%20완료-brightgreen)
 
 </div>
 
@@ -22,6 +22,69 @@
 - **방법**: 조건마다 빈 폴더 → 같은 과제 → 다른 지식 문서 → 숨은 테스트 채점
 - **측정**: 정답률 · 비용(USD) · 시간 · 턴 수
 - **반복**: 조건마다 3회
+
+---
+
+## 📊 결과 (2026-10-29, 24회)
+
+### 정답률
+
+| 조건 | Haiku 5.5 | Sonnet 5.5 |
+|---|---:|---:|
+| task-only | 44% | 47% |
+| ontology | 100% | 100% |
+| spec | 100% | 100% |
+| both | 100% | 100% |
+
+### 1회 평균 비용
+
+| 조건 | Haiku 5.5 | Sonnet 5.5 |
+|---|---:|---:|
+| task-only | $1.41 | $0.38 |
+| ontology | $1.18 | $0.45 |
+| spec | **$0.92** | **$0.39** |
+| both | $1.11 | $0.48 |
+
+### 1회 평균 시간 · 턴
+
+| 조건 | Haiku 5.5 | Sonnet 5.5 |
+|---|---:|---:|
+| task-only | 199s · 6.0 | 60s · 6.0 |
+| ontology | 130s · 6.7 | 68s · 6.3 |
+| spec | **100s** · 7.3 | **49s** · 6.7 |
+| both | 114s · 10.7 | 64s · 8.0 |
+
+### 정리
+
+- **지식을 하나라도 주면 100%**, 안 주면 절반도 못 맞힘
+- **spec(PRD+SDD)이 가장 싸고 빠름** — 두 모델 모두
+- **both는 spec보다 비쌈** — Haiku +21%, Sonnet +24%
+  - 턴도 늘어남 (Haiku 7.3 → 10.7)
+- **ontology는 spec보다 비쌈** — Haiku +29%, Sonnet +17%
+  - 원 영상(거의 같음)과 다른 점
+- **Haiku가 Sonnet보다 2.4~3.7배 비쌈**
+  - 출력 토큰이 약 3.7배 (31k vs 8.5k)
+  - 더 오래 짜고 더 많이 확인함
+- 원 영상과 같은 방향: **작은 과제에서는 스펙 하나면 충분**
+- 총비용: $18.97
+
+### task-only가 틀린 곳 (6회 중)
+
+| 틀린 횟수 | 테스트 |
+|---:|---|
+| 6/6 | 근속 1년 → 14일 |
+| 6/6 | 1주년 다음 달 1일에 14일 |
+| 6/6 | 월 발생 11일 상한 |
+| 6/6 | 연간 상한 25일 |
+| 6/6 | 출근율 80% 미만 처리 |
+| 6/6 | 전년 잔여 이월 없음 |
+| 6/6 | 수당 0.5일 내림 |
+| 1/6 | 근속 2년 → 15일 |
+
+- 모델은 **근로기준법(기본 15일)** 을 기본값으로 짐작
+  - 그래서 "근속 2년 → 15일"은 대부분 우연히 맞음
+- 회사만 아는 규칙(1주년 다음 달, 수당 내림, 이월 없음)은 전부 틀림
+- 원본 결과: [`results/2026-10-29-run1.md`](results/2026-10-29-run1.md)
 
 ---
 
@@ -122,7 +185,8 @@ ontology-coding-bench/
 │   ├── conditions.mjs      # 조건 · 모델 · 프롬프트
 │   ├── run.mjs             # 실행 + 채점
 │   └── report.mjs          # 결과표
-├── runs/                   # 실행 결과 (git 제외)
+├── runs/                   # 실행 원본 (git 제외)
+├── results/                # 실행별 결과표 · 원자료
 └── hidden/                 # ⚠️ AI에게 절대 보여 주지 않음
     ├── reference/leave.js  # 정답 구현
     └── tests/              # 숨은 테스트 38개
@@ -198,7 +262,7 @@ npm run report
 | `--concurrency` | 1 |
 
 - 필요: Node 22, 로그인된 `claude` CLI
-- 시범 1회(Haiku · spec): 38/38, $1.55, 140초
+- 전체 24회 소요: 약 20분 (동시 2), $18.97
 
 ---
 
@@ -209,8 +273,10 @@ npm run report
 - [x] 정답 구현 + 숨은 테스트 38개
 - [x] 지식 문서 4종
 - [x] 실행 · 채점 · 결과표 스크립트
-- [ ] 전체 24회 실행
-- [ ] 결과 정리 · 그래프
+- [x] 전체 24회 실행
+- [x] 결과표
+- [ ] 그래프
+- [ ] drift · json 조건 ([#1](https://github.com/kyungchan3007/ontology-coding-bench/issues/1), [#2](https://github.com/kyungchan3007/ontology-coding-bench/issues/2))
 
 ---
 
