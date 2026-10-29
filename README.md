@@ -8,7 +8,8 @@
 
 ![Node](https://img.shields.io/badge/node-22-339933?logo=node.js&logoColor=white)
 ![Tests](https://img.shields.io/badge/hidden%20tests-38-blue)
-![Status](https://img.shields.io/badge/status-준비%20중-orange)
+![Models](https://img.shields.io/badge/models-Haiku%205.5%20·%20Sonnet%205.5-8A2BE2)
+![Status](https://img.shields.io/badge/status-실행%20전-orange)
 
 </div>
 
@@ -26,7 +27,8 @@
 
 ## 🤔 왜 이 실험을 하나
 
-- 한 유튜브 실험에서 따릉이 요금 모듈로 비교했더니:
+- 출발점: [단테](https://www.youtube.com/watch?v=bZJa_I8EnUc) 채널의 온톨로지 실험 영상
+- 영상에서 따릉이 요금 모듈로 비교했더니:
   - 지식을 하나라도 넣으면 정답률 100%
   - 온톨로지 + 스펙을 둘 다 넣으면 비용 · 시간만 늘어남
 - 그런데 그 과제는 **함수 하나짜리 작은 과제**였음
@@ -83,10 +85,24 @@
 | `ontology` | ontology.md |
 | `spec` | prd.md + sdd.md |
 | `both` | ontology + prd + sdd |
-| `drift` | both, 단 한 문서만 옛날 값 |
-| `json` | 짧은 설명 + leave-policy.json |
 
-- 조건 구성은 실행 스크립트를 만들면서 확정합니다
+| 모델 | ID |
+|---|---|
+| haiku | claude-haiku-5-5 |
+| sonnet | claude-sonnet-5-5 |
+
+- 조건 4개 × 모델 2개 × 3회 = **24회**
+- 조건 정의: [`bench/conditions.mjs`](bench/conditions.mjs)
+- 다음에 더할 후보
+  - `drift`: 한 문서만 옛날 값
+  - `json`: 값은 JSON 한 곳에만
+
+### 공정하게 만든 장치
+
+- 작업 폴더는 **저장소 밖** 임시 폴더 → `hidden/` 접근 불가
+- 모든 조건에 같은 프롬프트 · 같은 `TASK.md`
+- 사용자 설정 · MCP 끔 (`--setting-sources project`, `--strict-mcp-config`)
+- 허용 도구: 파일 읽기/쓰기 + `node` 실행만
 
 ---
 
@@ -102,6 +118,11 @@ ontology-coding-bench/
 │   └── leave-policy.json   # 기계가 읽는 값
 ├── task/
 │   └── TASK.md             # 모든 조건 공통 과제 (함수 · 입출력만)
+├── bench/
+│   ├── conditions.mjs      # 조건 · 모델 · 프롬프트
+│   ├── run.mjs             # 실행 + 채점
+│   └── report.mjs          # 결과표
+├── runs/                   # 실행 결과 (git 제외)
 └── hidden/                 # ⚠️ AI에게 절대 보여 주지 않음
     ├── reference/leave.js  # 정답 구현
     └── tests/              # 숨은 테스트 38개
@@ -151,6 +172,34 @@ npm run test:reference
 LEAVE_MODULE=path/to/leave.js npm run test:reference
 ```
 
+- 전체 실험 (24회)
+
+```bash
+npm run bench
+```
+
+- 일부만 (예: Haiku · spec · 1회)
+
+```bash
+node bench/run.mjs --models haiku --conditions spec --reps 1
+```
+
+- 결과표 (가장 최근 실행)
+
+```bash
+npm run report
+```
+
+| 옵션 | 기본값 |
+|---|---|
+| `--models` | haiku,sonnet |
+| `--conditions` | 4개 전부 |
+| `--reps` | 3 |
+| `--concurrency` | 1 |
+
+- 필요: Node 22, 로그인된 `claude` CLI
+- 시범 1회(Haiku · spec): 38/38, $1.55, 140초
+
 ---
 
 ## 🚧 진행 상황
@@ -159,10 +208,17 @@ LEAVE_MODULE=path/to/leave.js npm run test:reference
 - [x] 공통 과제 `TASK.md`
 - [x] 정답 구현 + 숨은 테스트 38개
 - [x] 지식 문서 4종
-- [ ] 실행 스크립트 `run.mjs`
-- [ ] 결과표 · 그래프
+- [x] 실행 · 채점 · 결과표 스크립트
+- [ ] 전체 24회 실행
+- [ ] 결과 정리 · 그래프
 
 ---
+
+## 🙏 출처
+
+- 영상: [단테 — 온톨로지 실험](https://www.youtube.com/watch?v=bZJa_I8EnUc)
+  - 따릉이 요금 코딩 실험 · 보험 DB 챗봇 실험
+  - 이 저장소는 그중 **코딩 실험**을 다른 도메인으로 다시 재 본 것
 
 ## 🔗 관련
 

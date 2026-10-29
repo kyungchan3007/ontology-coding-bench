@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:reference": "node --test hidden/tests/leave.test.mjs"
+    "test:reference": "node --test hidden/tests/leave.test.mjs",
+    "bench": "node bench/run.mjs",
+    "report": "node bench/report.mjs"
   }
 }
