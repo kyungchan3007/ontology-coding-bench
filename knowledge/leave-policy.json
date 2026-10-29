@@ -1,0 +1,61 @@
+{
+  "$comment": "온톨컴퍼니 연차휴가 규정의 값. 근거: source.md. 규칙 번호는 source.md의 R 번호와 같다.",
+  "fiscalYear": { "start": "01-01", "end": "12-31" },
+  "workdays": { "weekdays": [1, 2, 3, 4, 5], "excludeHolidays": false },
+  "deemedPresentReasons": ["parentalLeave", "industrialAccident", "reserveTraining"],
+  "serviceYears": {
+    "definition": "full years from hireDate to the 01-01 grant date",
+    "example": { "hireDate": "2023-03-01", "on": "2025-01-01", "serviceYears": 1 }
+  },
+  "monthlyAccrual": {
+    "rule": "R1",
+    "daysPerPerfectMonth": 1,
+    "maxDays": 11,
+    "period": "hireDateMonthly",
+    "grantOn": "hireDate + k months"
+  },
+  "firstAnnualGrant": {
+    "rule": "R2",
+    "days": 14,
+    "grantOn": "first day of the month after the month of the 1st hire anniversary",
+    "attendanceCheck": false
+  },
+  "annualGrant": {
+    "rule": "R2-1, R3",
+    "grantOn": "every 01-01 strictly after firstAnnualGrant date",
+    "requiresServiceYears": 1,
+    "baseDays": 14,
+    "incrementPerYear": 1,
+    "maxDays": 25,
+    "formula": "min(baseDays + (serviceYears - 1) * incrementPerYear, maxDays)"
+  },
+  "lowAttendance": {
+    "rule": "R4",
+    "appliesTo": "annualGrant",
+    "threshold": 0.8,
+    "comparison": "rate < threshold",
+    "attendanceRate": "(workdays - absentDays) / workdays of previous fiscal year",
+    "daysInstead": "count of calendar months (Jan-Dec) of previous fiscal year with no absence"
+  },
+  "usage": {
+    "rule": "R6, R7",
+    "units": { "day": 1, "half": 0.5, "quarter": 0.25 },
+    "rejectIfExceedsBalance": true,
+    "balanceAtRequest": "grants from 01-01 to request date - usages from 01-01 to request date",
+    "deductionOrder": "oldestGrantFirst",
+    "balanceScope": "fiscalYear"
+  },
+  "payout": {
+    "rule": "R8, R9",
+    "expireUnused": false,
+    "carryOver": false,
+    "paidDaysRounding": { "unit": 0.5, "mode": "floor", "appliesOnlyTo": "payout; grants, usages and balance keep 0.25 units" },
+    "dailyWage": { "formula": "annualSalary / 12 / 209 * 8", "rounding": "floor" },
+    "amountRounding": "floor"
+  },
+  "undecided": [
+    "지각·조퇴가 있는 달을 개근월로 보는지",
+    "연차를 사용한 날을 출근율 계산에서 출근으로 보는지",
+    "입사일로부터 1개월에 해당하는 날짜가 없는 달의 처리 (29~31일 입사)"
+  ]
+}

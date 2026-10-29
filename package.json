@@ -1,0 +1,8 @@
+{
+  "name": "ontology-coding-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:reference": "node --test hidden/tests/leave.test.mjs"
+  }
+}
