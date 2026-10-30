@@ -27,7 +27,17 @@
 
 ## 📊 결과 (2026-10-29, 24회)
 
+> 그래프 축: **H** = Haiku 5.5, **S** = Sonnet 5.5
+
 ### 정답률
+
+```mermaid
+xychart-beta
+    title "정답률 (%)"
+    x-axis ["H task", "H onto", "H spec", "H both", "S task", "S onto", "S spec", "S both"]
+    y-axis "%" 0 --> 100
+    bar [44, 100, 100, 100, 47, 100, 100, 100]
+```
 
 | 조건 | Haiku 5.5 | Sonnet 5.5 |
 |---|---:|---:|
@@ -38,6 +48,14 @@
 
 ### 1회 평균 비용
 
+```mermaid
+xychart-beta
+    title "1회 평균 비용 (USD)"
+    x-axis ["H task", "H onto", "H spec", "H both", "S task", "S onto", "S spec", "S both"]
+    y-axis "USD" 0 --> 1.6
+    bar [1.41, 1.18, 0.92, 1.11, 0.38, 0.45, 0.39, 0.48]
+```
+
 | 조건 | Haiku 5.5 | Sonnet 5.5 |
 |---|---:|---:|
 | task-only | $1.41 | $0.38 |
@@ -46,6 +64,14 @@
 | both | $1.11 | $0.48 |
 
 ### 1회 평균 시간 · 턴
+
+```mermaid
+xychart-beta
+    title "1회 평균 시간 (초)"
+    x-axis ["H task", "H onto", "H spec", "H both", "S task", "S onto", "S spec", "S both"]
+    y-axis "초" 0 --> 220
+    bar [199, 130, 100, 114, 60, 68, 49, 64]
+```
 
 | 조건 | Haiku 5.5 | Sonnet 5.5 |
 |---|---:|---:|
@@ -275,7 +301,7 @@ npm run report
 - [x] 실행 · 채점 · 결과표 스크립트
 - [x] 전체 24회 실행
 - [x] 결과표
-- [ ] 그래프
+- [x] 그래프
 - [ ] drift · json 조건 ([#1](https://github.com/kyungchan3007/ontology-coding-bench/issues/1), [#2](https://github.com/kyungchan3007/ontology-coding-bench/issues/2))
 
 ---
