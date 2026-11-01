@@ -395,4 +395,4 @@ node bench/run.mjs --conditions source-only --modes solo,plan-gen,gen-eval --con
 
 ## 🔗 관련
 
-- 챗봇 실험: `ontology-sql-bench` (예정)
+- 챗봇 실험: [ontology-sql-bench](https://github.com/kyungchan3007/ontology-sql-bench)
