@@ -1,18 +1,30 @@
-// 실험 실행 — 모델 × 조건 × 반복마다 빈 폴더에서 Claude Code에 과제를 주고 숨은 테스트로 채점한다.
+// 실험 실행 — 모델 × 조건 × effort × 방식 × 반복마다 빈 폴더에서 Claude Code에 과제를 주고 숨은 테스트로 채점한다.
 //
 // 사용법:
 //   node bench/run.mjs                                   # 전체 (모델 2 × 조건 4 × 3회)
 //   node bench/run.mjs --models sonnet --conditions spec --reps 1
+//   node bench/run.mjs --conditions spec --efforts low,medium,high
+//   node bench/run.mjs --conditions source-only --modes solo,plan-gen,gen-eval
 //   node bench/run.mjs --concurrency 2
 //
-// 결과: runs/<runId>/results.jsonl, runs/<runId>/<model>/<condition>/rep<n>/
+// 결과: runs/<runId>/results.jsonl, runs/<runId>/<model>/<condition>/<effort>/<mode>/rep<n>/
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONDITIONS, MODELS, PROMPT, claudeMd } from './conditions.mjs';
+import {
+  CONDITIONS,
+  EFFORTS,
+  EVAL_PROMPT,
+  FIX_PROMPT,
+  MODELS,
+  MODES,
+  PLAN_PROMPT,
+  PROMPT,
+  claudeMd,
+} from './conditions.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEST_FILE = path.join(ROOT, 'hidden/tests/leave.test.mjs');
@@ -21,17 +33,28 @@ const GRADE_TIMEOUT_MS = 60 * 1000;
 
 // ---- 인자 ----
 function parseArgs(argv) {
-  const opts = { models: Object.keys(MODELS), conditions: Object.keys(CONDITIONS), reps: 3, concurrency: 1 };
+  const opts = {
+    models: Object.keys(MODELS),
+    conditions: ['task-only', 'ontology', 'spec', 'both'],
+    efforts: ['default'],
+    modes: ['solo'],
+    reps: 3,
+    concurrency: 1,
+  };
   for (let i = 0; i < argv.length; i += 2) {
     const [key, value] = [argv[i], argv[i + 1]];
     if (key === '--models') opts.models = value.split(',');
     else if (key === '--conditions') opts.conditions = value.split(',');
+    else if (key === '--efforts') opts.efforts = value.split(',');
+    else if (key === '--modes') opts.modes = value.split(',');
     else if (key === '--reps') opts.reps = Number(value);
     else if (key === '--concurrency') opts.concurrency = Number(value);
     else throw new Error(`알 수 없는 인자: ${key}`);
   }
   for (const c of opts.conditions) if (!CONDITIONS[c]) throw new Error(`알 수 없는 조건: ${c}`);
   for (const m of opts.models) if (!MODELS[m]) throw new Error(`알 수 없는 모델: ${m}`);
+  for (const e of opts.efforts) if (e !== 'default' && !EFFORTS.includes(e)) throw new Error(`알 수 없는 effort: ${e}`);
+  for (const m of opts.modes) if (!MODES.includes(m)) throw new Error(`알 수 없는 방식: ${m}`);
   return opts;
 }
 
@@ -66,12 +89,16 @@ async function prepareWorkdir(condition) {
   return dir;
 }
 
-// ---- Claude Code 실행 ----
-async function runClaude(model, cwd) {
+const exists = (p) => fs.access(p).then(() => true, () => false);
+
+// ---- Claude Code 실행 (한 단계) ----
+// stream-json 으로 실행 기록 전체를 남긴다. 마지막 result 줄에 비용 · 시간 · 토큰이 있다.
+async function runClaude({ model, effort, prompt, cwd }) {
   const args = [
-    '-p', PROMPT,
+    '-p', prompt,
     '--model', MODELS[model],
-    '--output-format', 'json',
+    ...(effort === 'default' ? [] : ['--effort', effort]),
+    '--output-format', 'stream-json', '--verbose',
     '--permission-mode', 'dontAsk',
     '--allowedTools', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash(node:*)', 'Bash(ls:*)', 'Bash(cat:*)',
     '--setting-sources', 'project',
@@ -80,67 +107,138 @@ async function runClaude(model, cwd) {
   ];
   const started = Date.now();
   const res = await exec('claude', args, { cwd, timeoutMs: CLAUDE_TIMEOUT_MS });
-  let out = null;
-  try {
-    out = JSON.parse(res.stdout);
-  } catch {}
-  return { res, out, wallMs: Date.now() - started };
+  const events = res.stdout
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  const out = events.findLast((e) => e.type === 'result') ?? null;
+  const toolUses = events
+    .filter((e) => e.type === 'assistant')
+    .flatMap((e) => e.message?.content ?? [])
+    .filter((c) => c.type === 'tool_use').length;
+  return {
+    res,
+    stats: {
+      costUsd: out?.total_cost_usd ?? null,
+      durationMs: out?.duration_ms ?? Date.now() - started,
+      turns: out?.num_turns ?? null,
+      inputTokens: out?.usage
+        ? (out.usage.input_tokens ?? 0) + (out.usage.cache_read_input_tokens ?? 0) + (out.usage.cache_creation_input_tokens ?? 0)
+        : null,
+      outputTokens: out?.usage?.output_tokens ?? null,
+      thinkingTokens: out?.usage?.output_tokens_details?.thinking_tokens ?? null,
+      toolUses,
+      permissionDenials: out?.permission_denials?.length ?? null,
+      modelIds: out?.modelUsage ? Object.keys(out.modelUsage) : [],
+      claudeError: out ? Boolean(out.is_error) : true,
+      claudeTimedOut: res.timedOut,
+    },
+  };
 }
+
+// ---- 방식별 단계 ----
+// 각 단계는 같은 작업 폴더에서 새 세션으로 돈다. 단계 사이에 넘어가는 건 파일뿐이다.
+async function runSteps({ mode, condition, work, run }) {
+  if (mode === 'solo') return [await run('gen', PROMPT)];
+
+  if (mode === 'plan-gen') {
+    const plan = await run('plan', PLAN_PROMPT);
+    // 구현 담당은 PLAN.md만 본다: 원래 지식 문서와 계획 담당이 남긴 코드를 치운다
+    for (const f of CONDITIONS[condition]) await fs.rm(path.join(work, f), { force: true });
+    await fs.rm(path.join(work, 'leave.js'), { force: true });
+    const hasPlan = await exists(path.join(work, 'PLAN.md'));
+    await fs.writeFile(path.join(work, 'CLAUDE.md'), claudeMd(hasPlan ? ['PLAN.md'] : [], '설계 문서'));
+    return [plan, await run('gen', PROMPT)];
+  }
+
+  if (mode === 'gen-eval') {
+    const gen = await run('gen', PROMPT);
+    // 검수 담당이 leave.js를 고치면 되돌린다 (검수만 하게)
+    const leavePath = path.join(work, 'leave.js');
+    const before = (await exists(leavePath)) ? await fs.readFile(leavePath) : null;
+    const evalStep = await run('eval', EVAL_PROMPT);
+    if (before) await fs.writeFile(leavePath, before);
+    const steps = [gen, evalStep];
+    if (await exists(path.join(work, 'REVIEW.md'))) steps.push(await run('fix', FIX_PROMPT));
+    return steps;
+  }
+
+  throw new Error(`알 수 없는 방식: ${mode}`);
+}
+
+const sum = (xs) => (xs.some((x) => x == null) ? null : xs.reduce((a, b) => a + b, 0));
 
 // ---- 채점 ----
 async function grade(leavePath) {
-  try {
-    await fs.access(leavePath);
-  } catch {
-    return { pass: 0, total: 0, missing: true, tap: '' };
-  }
+  if (!(await exists(leavePath))) return { pass: 0, total: 0, missing: true, failed: [], tap: '' };
   const res = await exec('node', ['--test', '--test-reporter=tap', TEST_FILE], {
     cwd: ROOT,
     env: { LEAVE_MODULE: leavePath },
     timeoutMs: GRADE_TIMEOUT_MS,
   });
   const num = (name) => Number(res.stdout.match(new RegExp(`^# ${name} (\\d+)`, 'm'))?.[1] ?? 0);
-  return { pass: num('pass'), total: num('tests'), missing: false, timedOut: res.timedOut, tap: res.stdout };
+  const failed = [...res.stdout.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]);
+  return { pass: num('pass'), total: num('tests'), missing: false, failed, timedOut: res.timedOut, tap: res.stdout };
 }
 
 // ---- 한 번 실행 ----
-async function runOne({ runDir, model, condition, rep }) {
-  const label = `${model}/${condition}/rep${rep}`;
-  const outDir = path.join(runDir, model, condition, `rep${rep}`);
-  await fs.mkdir(outDir, { recursive: true });
+async function runOne({ runDir, model, condition, effort, mode, rep }) {
+  const rel = path.join(model, condition, effort, mode, `rep${rep}`);
+  const outDir = path.join(runDir, rel);
+  await fs.mkdir(path.join(outDir, 'steps'), { recursive: true });
 
   const work = await prepareWorkdir(condition);
-  const { res, out, wallMs } = await runClaude(model, work);
+  const run = async (name, prompt) => {
+    const { res, stats } = await runClaude({ model, effort, prompt, cwd: work });
+    await fs.writeFile(path.join(outDir, 'steps', `${name}.jsonl`), res.stdout || '');
+    if (res.stderr) await fs.writeFile(path.join(outDir, 'steps', `${name}.stderr.txt`), res.stderr);
+    return { name, ...stats };
+  };
+  const steps = await runSteps({ mode, condition, work, run });
 
   // 결과물을 저장소로 복사한 뒤 그 사본을 채점한다
   await fs.cp(work, path.join(outDir, 'work'), { recursive: true });
-  await fs.writeFile(path.join(outDir, 'claude.json'), res.stdout || '');
-  if (res.stderr) await fs.writeFile(path.join(outDir, 'claude.stderr.txt'), res.stderr);
   const g = await grade(path.join(outDir, 'work', 'leave.js'));
   await fs.writeFile(path.join(outDir, 'grade.tap'), g.tap);
   await fs.rm(work, { recursive: true, force: true });
 
   const result = {
     model,
-    modelIds: out?.modelUsage ? Object.keys(out.modelUsage) : [],
+    modelIds: [...new Set(steps.flatMap((s) => s.modelIds))],
     condition,
+    effort,
+    mode,
     rep,
+    dir: rel,
     pass: g.pass,
     total: g.total,
+    failed: g.failed,
     leaveMissing: g.missing,
-    costUsd: out?.total_cost_usd ?? null,
-    durationMs: out?.duration_ms ?? wallMs,
-    turns: out?.num_turns ?? null,
-    inputTokens: out?.usage ? (out.usage.input_tokens ?? 0) + (out.usage.cache_read_input_tokens ?? 0) + (out.usage.cache_creation_input_tokens ?? 0) : null,
-    outputTokens: out?.usage?.output_tokens ?? null,
-    claudeError: out ? Boolean(out.is_error) : true,
-    claudeTimedOut: res.timedOut,
+    costUsd: sum(steps.map((s) => s.costUsd)),
+    durationMs: sum(steps.map((s) => s.durationMs)),
+    turns: sum(steps.map((s) => s.turns)),
+    inputTokens: sum(steps.map((s) => s.inputTokens)),
+    outputTokens: sum(steps.map((s) => s.outputTokens)),
+    thinkingTokens: sum(steps.map((s) => s.thinkingTokens)),
+    toolUses: sum(steps.map((s) => s.toolUses)),
+    permissionDenials: sum(steps.map((s) => s.permissionDenials)),
+    claudeError: steps.some((s) => s.claudeError),
+    claudeTimedOut: steps.some((s) => s.claudeTimedOut),
+    steps: steps.map(({ modelIds, ...s }) => s),
   };
   await fs.writeFile(path.join(outDir, 'result.json'), JSON.stringify(result, null, 2));
   await fs.appendFile(path.join(runDir, 'results.jsonl'), JSON.stringify(result) + '\n');
 
+  const label = `${model}/${condition}/${effort}/${mode}/rep${rep}`;
   const cost = result.costUsd == null ? '-' : `$${result.costUsd.toFixed(3)}`;
-  console.log(`${label.padEnd(28)} ${String(g.pass).padStart(2)}/${g.total || 38}  ${cost}  ${(result.durationMs / 1000).toFixed(0)}s  turns ${result.turns ?? '-'}`);
+  console.log(`${label.padEnd(40)} ${String(g.pass).padStart(2)}/${g.total || 38}  ${cost}  ${(result.durationMs / 1000).toFixed(0)}s  turns ${result.turns ?? '-'}`);
   return result;
 }
 
@@ -149,12 +247,17 @@ const opts = parseArgs(process.argv.slice(2));
 const runId = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const runDir = path.join(ROOT, 'runs', runId);
 await fs.mkdir(runDir, { recursive: true });
-await fs.writeFile(path.join(runDir, 'config.json'), JSON.stringify({ ...opts, prompt: PROMPT }, null, 2));
+await fs.writeFile(
+  path.join(runDir, 'config.json'),
+  JSON.stringify({ ...opts, prompts: { PROMPT, PLAN_PROMPT, EVAL_PROMPT, FIX_PROMPT } }, null, 2),
+);
 
 const jobs = [];
 for (let rep = 1; rep <= opts.reps; rep++)
   for (const model of opts.models)
-    for (const condition of opts.conditions) jobs.push({ runDir, model, condition, rep });
+    for (const condition of opts.conditions)
+      for (const effort of opts.efforts)
+        for (const mode of opts.modes) jobs.push({ runDir, model, condition, effort, mode, rep });
 
 console.log(`runId ${runId} — ${jobs.length}회 실행 (동시 ${opts.concurrency})`);
 let next = 0;

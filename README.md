@@ -9,7 +9,7 @@
 ![Node](https://img.shields.io/badge/node-22-339933?logo=node.js&logoColor=white)
 ![Tests](https://img.shields.io/badge/hidden%20tests-38-blue)
 ![Models](https://img.shields.io/badge/models-Haiku%205.5%20·%20Sonnet%205.5-8A2BE2)
-![Status](https://img.shields.io/badge/status-1차%20실행%20완료-brightgreen)
+![Status](https://img.shields.io/badge/status-3차%20실행%20완료-brightgreen)
 
 </div>
 
@@ -111,6 +111,75 @@ xychart-beta
   - 그래서 "근속 2년 → 15일"은 대부분 우연히 맞음
 - 회사만 아는 규칙(1주년 다음 달, 수당 내림, 이월 없음)은 전부 틀림
 - 원본 결과: [`results/2026-10-29-run1.md`](results/2026-10-29-run1.md)
+
+---
+
+## ⚙️ 2차: effort 비교 (2026-11-01, 18회)
+
+> 조건 `spec` 고정, `--effort`만 바꿈. 근거: [Claude Code 비용 문서](https://code.claude.com/docs/en/costs)
+
+| 모델 | effort | 정답률 | 비용 | 시간 | 생각 토큰 |
+|---|---|---:|---:|---:|---:|
+| Haiku | low | 100% | **$0.58** | **55s** | 8.9k |
+| Haiku | medium | 100% | $0.91 | 90s | 15.7k |
+| Haiku | high | 100% | $0.91 | 101s | 18.5k |
+| Sonnet | low | 100% | **$0.27** | **29s** | 1.1k |
+| Sonnet | medium | 100% | $0.28 | 31s | 1.3k |
+| Sonnet | high | 100% | $0.41 | 57s | 3.7k |
+
+- **low로 내려도 18회 전부 38/38**
+- **비용 high 대비**: Haiku −37%, Sonnet −34%
+- **시간**: 약 절반
+- **Haiku 비용의 정체 = 생각 토큰** (출력의 약 75%)
+- 1차 기본값(미지정)은 high와 거의 같음
+- **한계**: 쉬운 과제라 정확도가 떨어지는 지점은 못 봄
+- 원본: [`results/2026-11-01-run2-effort.md`](results/2026-11-01-run2-effort.md)
+
+---
+
+## 🧑‍🤝‍🧑 3차: 계획 · 생성 · 평가 역할 분리 (2026-11-01, 18회)
+
+> 원본 규정 `source.md`만 제공. 근거: [Harness design for long-running apps](https://www.anthropic.com/engineering/harness-design-long-running-apps)
+
+| 방식 | 흐름 |
+|---|---|
+| solo | 구현 |
+| plan-gen | 계획(PLAN.md) → 구현 (PLAN.md만 봄) |
+| gen-eval | 구현 → 검수(REVIEW.md) → 수정 |
+
+| 모델 | 방식 | 정답률 | 비용 | 시간 | 턴 |
+|---|---|---:|---:|---:|---:|
+| Haiku | solo | 100% | **$1.19** | **134s** | 7.0 |
+| Haiku | plan-gen | 100% | $2.90 | 355s | 18.7 |
+| Haiku | gen-eval | 100% | $3.96 | 475s | 23.3 |
+| Sonnet | solo | 100% | **$0.43** | **57s** | 6.0 |
+| Sonnet | plan-gen | 100% | $1.58 | 265s | 14.3 |
+| Sonnet | gen-eval | 100% | $1.99 | 323s | 21.7 |
+
+- **원본 규정만 줘도 solo가 이미 100%**
+  - 사람이 쓴 spec과 비교: Haiku $0.92 vs $1.19, Sonnet $0.39 vs $0.43
+  - 정리된 문서는 정확도가 아니라 **비용을 조금** 줄임
+- **역할 분리는 비용만 늘어남**
+  - plan-gen: solo의 2.4~3.7배
+  - gen-eval: solo의 3.3~4.6배
+- 원 글의 교훈과 같은 방향
+  - 검수 담당은 **혼자 못 푸는 과제**에서만 값을 함
+- **하네스 한계** ([#13](https://github.com/kyungchan3007/ontology-coding-bench/issues/13))
+  - 검수 담당 6명 중 3명이 테스트를 실행하지 못함
+  - 원인: `node a && node b` 같은 복합 명령이 권한에서 거부됨
+  - 이 3명은 코드를 눈으로만 대조함
+  - 구현이 이미 100%라 정답률 결론은 그대로
+- 원본: [`results/2026-11-01-run3-roles.md`](results/2026-11-01-run3-roles.md)
+
+---
+
+## 🧾 지금까지의 결론 (이 과제 기준)
+
+- 지식 문서는 **필수** — 없으면 절반도 못 맞힘
+- 문서 모양(온톨로지 · spec · 원본)은 정확도에 차이 없음
+- 가성비 1위: **Sonnet + spec + effort low** ($0.27, 29s)
+- 작은 과제에 역할 분리 · 높은 effort는 **낭비**
+- 다음 확인할 것: 정확도가 100% 밑으로 떨어지는 **어려운 과제**
 
 ---
 
@@ -280,10 +349,19 @@ node bench/run.mjs --models haiku --conditions spec --reps 1
 npm run report
 ```
 
+- 2차 · 3차 재현
+
+```bash
+node bench/run.mjs --conditions spec --efforts low,medium,high --concurrency 2
+node bench/run.mjs --conditions source-only --modes solo,plan-gen,gen-eval --concurrency 2
+```
+
 | 옵션 | 기본값 |
 |---|---|
 | `--models` | haiku,sonnet |
-| `--conditions` | 4개 전부 |
+| `--conditions` | task-only,ontology,spec,both |
+| `--efforts` | default (모델 기본값) |
+| `--modes` | solo |
 | `--reps` | 3 |
 | `--concurrency` | 1 |
 
@@ -302,6 +380,9 @@ npm run report
 - [x] 전체 24회 실행
 - [x] 결과표
 - [x] 그래프
+- [x] 채점 개선: 규칙별 · pass^3 · 실행 기록
+- [x] 2차: effort 비교
+- [x] 3차: 역할 분리
 - [ ] drift · json 조건 ([#1](https://github.com/kyungchan3007/ontology-coding-bench/issues/1), [#2](https://github.com/kyungchan3007/ontology-coding-bench/issues/2))
 
 ---
